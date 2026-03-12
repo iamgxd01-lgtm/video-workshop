@@ -502,3 +502,235 @@ const MyComponent = () => {
 };
 // 注意：delayRender 有 30 秒超时，必须在超时前调用 continueRender
 ```
+
+## Light Leaks 效果（@remotion/light-leaks）
+
+WebGL 光泄漏效果，常用于转场叠加。在持续时间的前半段展开，后半段收回。
+
+```typescript
+import { LightLeak } from "@remotion/light-leaks";
+import { TransitionSeries } from "@remotion/transitions";
+
+// 配合 TransitionSeries.Overlay 使用（最常见用法）
+<TransitionSeries>
+  <TransitionSeries.Sequence durationInFrames={2 * fps}><SceneA /></TransitionSeries.Sequence>
+  <TransitionSeries.Overlay durationInFrames={1 * fps}>
+    <LightLeak />
+  </TransitionSeries.Overlay>
+  <TransitionSeries.Sequence durationInFrames={2 * fps}><SceneB /></TransitionSeries.Sequence>
+</TransitionSeries>
+
+// 自定义外观
+<LightLeak
+  seed={5}         // 改变光泄漏的形状图案（不同 seed = 不同图案）
+  hueShift={240}   // 色相旋转（0=橙黄, 120=绿, 240=蓝）
+/>
+
+// 独立使用（作为装饰叠加层）
+<AbsoluteFill>
+  <MyContent />
+  <LightLeak durationInFrames={2 * fps} seed={3} hueShift={120} />
+</AbsoluteFill>
+```
+
+## calculateMetadata 动态元数据
+
+动态计算 Composition 的时长、尺寸、props——在渲染前执行一次。
+
+```typescript
+import { Composition, CalculateMetadataFunction } from "remotion";
+
+// 定义计算函数
+const calculateMetadata: CalculateMetadataFunction<MyProps> = async ({ props, abortSignal }) => {
+  // 典型用法：根据音频时长动态设置视频时长
+  const response = await fetch(props.dataUrl, { signal: abortSignal });
+  const data = await response.json();
+
+  return {
+    durationInFrames: Math.ceil(data.audioDuration * 30), // 动态时长
+    width: 1080,          // 可选：动态宽度
+    height: 1080,         // 可选：动态高度
+    fps: 30,              // 可选：动态帧率
+    props: {              // 可选：转换 props
+      ...props,
+      fetchedData: data,
+    },
+  };
+};
+
+// 在 Root.tsx 中使用
+<Composition
+  id="Main"
+  component={Main}
+  durationInFrames={300}       // 占位值，会被 calculateMetadata 覆盖
+  fps={30}
+  width={1080}
+  height={1080}
+  defaultProps={{ dataUrl: "https://api.example.com/video-config" }}
+  calculateMetadata={calculateMetadata}
+/>
+```
+
+**配合音频时长的典型用法**：
+```typescript
+import { getAudioDurationInSeconds } from "@remotion/media-utils";
+import { staticFile } from "remotion";
+
+const calculateMetadata: CalculateMetadataFunction<Props> = async ({ props }) => {
+  const duration = await getAudioDurationInSeconds(staticFile("narration.mp3"));
+  return {
+    durationInFrames: Math.ceil(duration * 30) + 60, // 音频时长 + 2秒片尾
+  };
+};
+```
+
+## Easing 缓动函数完整参考
+
+除了 `spring()` 之外，`interpolate()` 支持丰富的缓动曲线：
+
+```typescript
+import { interpolate, Easing } from "remotion";
+
+// 基本用法：给 interpolate 加 easing
+const value = interpolate(frame, [0, 2 * fps], [0, 1], {
+  easing: Easing.inOut(Easing.quad),
+  extrapolateLeft: "clamp",
+  extrapolateRight: "clamp",
+});
+```
+
+**凹凸性（Convexity）**——控制加速/减速：
+- `Easing.in(curve)` — 慢启快停
+- `Easing.out(curve)` — 快启慢停
+- `Easing.inOut(curve)` — 慢启慢停
+
+**曲线（Curve）**——控制弯曲程度（从平缓到剧烈）：
+- `Easing.quad` — 二次（轻柔）
+- `Easing.sin` — 正弦（自然）
+- `Easing.exp` — 指数（强烈）
+- `Easing.circle` — 圆弧（最剧烈）
+
+**组合使用**：
+```typescript
+Easing.inOut(Easing.quad)    // 最常用：平滑的慢启慢停
+Easing.out(Easing.exp)       // 快速弹出然后缓慢停下
+Easing.in(Easing.circle)     // 缓慢启动然后急速加速
+```
+
+**贝塞尔曲线**——精确控制运动曲线：
+```typescript
+// 自定义贝塞尔曲线（与 CSS cubic-bezier 相同参数）
+Easing.bezier(0.8, 0.22, 0.96, 0.65)  // 自定义运动曲线
+Easing.bezier(0.25, 0.1, 0.25, 1.0)   // 类似 CSS ease
+```
+
+## AI 配音集成（ElevenLabs TTS）
+
+用 ElevenLabs API 生成语音，配合 `calculateMetadata` 动态调整视频时长。
+
+**前提**：需要 `ELEVENLABS_API_KEY` 环境变量。必须询问用户是否有 API Key。
+
+**流程**：
+1. 创建语音生成脚本（generate-voiceover.ts）
+2. 调用 ElevenLabs API 生成 MP3
+3. 用 `calculateMetadata` 读取音频时长，动态设置视频时长
+4. 在组件中用 `<Audio>` 播放
+
+```typescript
+// generate-voiceover.ts —— 生成语音文件
+const response = await fetch(
+  `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+  {
+    method: "POST",
+    headers: {
+      "xi-api-key": process.env.ELEVENLABS_API_KEY!,
+      "Content-Type": "application/json",
+      Accept: "audio/mpeg",
+    },
+    body: JSON.stringify({
+      text: "欢迎来到今天的分享",
+      model_id: "eleven_multilingual_v2",
+      voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.3 },
+    }),
+  },
+);
+const audioBuffer = Buffer.from(await response.arrayBuffer());
+writeFileSync("public/voiceover/scene-01.mp3", audioBuffer);
+
+// 运行：node --strip-types generate-voiceover.ts
+```
+
+## 音频可视化进阶（useWindowedAudioData）
+
+性能更好的音频数据加载方式，适合长音频：
+
+```typescript
+import { useWindowedAudioData, visualizeAudio, visualizeAudioWaveform, createSmoothSvgPath } from "@remotion/media-utils";
+
+// 窗口式加载（只加载当前帧附近的音频数据，比 useAudioData 更省内存）
+const { audioData, dataOffsetInSeconds } = useWindowedAudioData({
+  src: staticFile("music.mp3"),
+  frame,
+  fps,
+  windowInSeconds: 30,   // 加载 30 秒窗口
+});
+
+// 频谱可视化（传入 dataOffsetInSeconds）
+const frequencies = visualizeAudio({
+  fps, frame, audioData,
+  numberOfSamples: 256,
+  optimizeFor: "speed",
+  dataOffsetInSeconds,    // 重要：窗口偏移量
+});
+
+// 波形可视化（示波器风格）
+const waveform = visualizeAudioWaveform({
+  fps, frame, audioData,
+  numberOfSamples: 256,
+  windowInSeconds: 0.5,
+  dataOffsetInSeconds,
+});
+const path = createSmoothSvgPath({
+  points: waveform.map((y, i) => ({
+    x: (i / (waveform.length - 1)) * width,
+    y: HEIGHT / 2 + (y * HEIGHT) / 2,
+  })),
+});
+
+// 低频提取（bass-reactive 效果：跟着节拍跳动）
+const lowFreqs = frequencies.slice(0, 32);
+const bassIntensity = lowFreqs.reduce((sum, v) => sum + v, 0) / lowFreqs.length;
+const scale = 1 + bassIntensity * 0.5;  // 低音越强，放大越多
+```
+
+## 字幕系统（@remotion/captions）
+
+使用 JSON 格式的字幕数据，支持转录和显示。高级用法请加载 `/remotion` Skill 的 rules/subtitles.md。
+
+```typescript
+import type { Caption } from "@remotion/captions";
+
+// 字幕数据结构
+const caption: Caption = {
+  text: "你好世界",
+  startMs: 0,
+  endMs: 2000,
+  timestampMs: null,
+  confidence: null,
+};
+```
+
+## FFmpeg 操作
+
+Remotion 内置 FFmpeg，无需单独安装：
+
+```bash
+# 用 Remotion 内置的 ffmpeg（无需全局安装）
+npx remotion ffmpeg -i input.mp4 output.mp3
+npx remotion ffprobe input.mp4
+
+# 裁剪视频（必须重编码以避免开头冻帧）
+npx remotion ffmpeg -ss 00:00:05 -i public/input.mp4 -to 00:00:10 -c:v libx264 -c:a aac public/output.mp4
+```
+
+也可以在组件中用 `trimBefore`/`trimAfter` 非破坏性裁剪（见上方 Audio/Video 章节）。

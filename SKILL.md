@@ -521,6 +521,8 @@ items.map((item, i) => {
 4. **性能优先**：避免在渲染函数中做复杂计算，能缓存的用 `useMemo`；嵌入视频用 `OffthreadVideo` 而非 `Video`
 5. **预加载**：始终给 Sequence 加 `premountFor`；异步资源用 `delayRender`/`continueRender`
 6. **确定性**：需要随机效果时用 `random("seed")` 而非 `Math.random()`，保证每帧渲染结果一致
+7. **时间单位**：用 `秒 * fps` 表达时间，不要用裸帧数。如 `2 * fps`（2秒），不要写 `60`。让代码可读且适配不同帧率
+8. **禁止 CSS 动画**：所有动画必须由 `useCurrentFrame()` 驱动。禁止 CSS transitions、CSS animations、Tailwind 动画类名（`animate-*`）——它们在逐帧渲染时不生效
 
 #### 详细 API 参考
 
@@ -530,17 +532,23 @@ items.map((item, i) => {
 读取 <skill-directory>/references/extensions.md
 ```
 
-### Step 4: 预览视频（推荐）
+### Step 4: 预览视频
 
-先启动预览服务器，在浏览器中实时查看效果，方便快速调整：
+编写完代码后，启动预览服务器让用户在浏览器中实时查看效果：
 
 ```bash
 bash <skill-directory>/scripts/preview.sh "$PROJECT_DIR"
 ```
 
-预览服务器启动后会输出一个 localhost 地址（如 `http://localhost:3000/Main`），告诉用户可以在浏览器中查看实时预览。预览中可以拖动时间轴、逐帧查看动画效果。
+预览服务器启动后，自动在浏览器中打开预览页面：
 
-用户确认效果满意后，进入下一步渲染。如果用户不需要预览，可以直接跳到 Step 5 渲染。
+```bash
+open "http://localhost:3000/Main"
+```
+
+告诉用户预览地址（如 `http://localhost:3000/Main`），可以拖动时间轴、逐帧查看动画效果。**等待用户确认效果满意后**，再进入下一步渲染。
+
+> 只有用户明确说"不用预览"或"直接渲染"时才跳过此步骤。
 
 ### Step 5: 渲染视频
 
