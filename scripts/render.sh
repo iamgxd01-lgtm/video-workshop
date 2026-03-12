@@ -27,11 +27,15 @@ mkdir -p "$(dirname "$OUTPUT")"
 # 使用工作空间的 node_modules
 cd "$WORKSPACE"
 
+# 将绝对路径转为相对于工作空间的路径（remotion 需要相对路径）
+REL_ENTRY=$(python3 -c "import os; print(os.path.relpath('$PROJECT_DIR/src/index.ts', '$WORKSPACE'))")
+REL_OUTPUT=$(python3 -c "import os; print(os.path.relpath('$OUTPUT', '$WORKSPACE'))")
+
 # 渲染视频
 npx remotion render \
-  "$PROJECT_DIR/src/index.ts" \
+  "$REL_ENTRY" \
   "$COMP_ID" \
-  "$OUTPUT" \
+  "$REL_OUTPUT" \
   --codec h264 \
   --overwrite
 

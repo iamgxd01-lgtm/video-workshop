@@ -97,24 +97,34 @@ export const RemotionRoot: React.FC = () => {
 
 **src/Main.tsx**（核心动画组件——这是你发挥创意的地方）：
 
-根据用户需求编写动画。以下是可用的动画工具：
+根据用户需求编写动画。以下是全部可用的动画工具和能力：
 
 #### 核心 API 速查
 
 ```typescript
-// 从 "remotion" 导入
+// 从 "remotion" 导入——基础能力
 import {
   useCurrentFrame,       // 当前帧号（0, 1, 2, ...）
   useVideoConfig,        // { width, height, fps, durationInFrames }
   interpolate,           // 值映射：interpolate(frame, [0, 30], [0, 1])
   spring,                // 弹性动画：spring({ frame, fps, config: { damping: 200 } })
-  Sequence,              // 时间偏移容器：<Sequence from={30}>...</Sequence>
+  Sequence,              // 时间偏移容器：<Sequence from={30} premountFor={30}>...</Sequence>
+  Series,                // 顺序播放容器：<Series><Series.Sequence>...</Series.Sequence></Series>
+  Loop,                  // 循环播放：<Loop durationInFrames={60}>...</Loop>
   AbsoluteFill,          // 全屏定位容器
   Img,                   // 图片组件（替代 <img>）
-  Audio,                 // 音频组件
-  Video,                 // 视频组件
   staticFile,            // 引用 public/ 下的静态文件
+  Easing,                // 缓动函数：Easing.bezier(), Easing.out(), Easing.inOut()
+  random,                // 确定性随机数：random("seed") 每次渲染结果一致
+  delayRender,           // 等待异步操作：const handle = delayRender()
+  continueRender,        // 完成异步操作：continueRender(handle)
 } from "remotion";
+
+// 从 "@remotion/media" 导入——音视频能力
+import { Audio, Video, OffthreadVideo } from "@remotion/media";
+// Audio: 音频组件（支持 volume、trimBefore/trimAfter、playbackRate、loop、toneFrequency）
+// Video: 视频组件（支持同样的属性）
+// OffthreadVideo: 高性能视频组件（在独立线程解码，推荐用于嵌入视频）
 ```
 
 #### 常用动画模式
@@ -140,7 +150,7 @@ const items = ["第一点", "第二点", "第三点"];
 return (
   <div>
     {items.map((item, i) => (
-      <Sequence key={i} from={i * 30}>
+      <Sequence key={i} from={i * 30} premountFor={30}>
         <FadeIn>{item}</FadeIn>
       </Sequence>
     ))}
@@ -167,20 +177,203 @@ const hue = interpolate(frame, [0, durationInFrames], [200, 260]);
 return <AbsoluteFill style={{ background: `linear-gradient(135deg, hsl(${hue}, 80%, 20%), hsl(${hue + 40}, 80%, 40%))` }} />;
 ```
 
+**顺序播放多个场景（Series）**：
+```typescript
+import { Series } from "remotion";
+<Series>
+  <Series.Sequence durationInFrames={90}><Intro /></Series.Sequence>
+  <Series.Sequence durationInFrames={120}><MainContent /></Series.Sequence>
+  <Series.Sequence durationInFrames={60}><Outro /></Series.Sequence>
+</Series>
+```
+
+#### 全部能力目录
+
+以下是所有已安装的扩展能力。用户描述需求时，根据关键词选用对应能力：
+
+##### 1. 转场效果（@remotion/transitions）
+**用户说**："加个转场"、"场景切换要有过渡"、"淡入淡出切换"
+```typescript
+import { TransitionSeries, linearTiming, springTiming } from "@remotion/transitions";
+import { fade } from "@remotion/transitions/fade";
+import { slide } from "@remotion/transitions/slide";
+import { wipe } from "@remotion/transitions/wipe";
+import { flip } from "@remotion/transitions/flip";
+import { clockWipe } from "@remotion/transitions/clock-wipe";
+
+<TransitionSeries>
+  <TransitionSeries.Sequence durationInFrames={60}><SceneA /></TransitionSeries.Sequence>
+  <TransitionSeries.Transition
+    presentation={fade()}
+    timing={linearTiming({ durationInFrames: 15 })}
+  />
+  <TransitionSeries.Sequence durationInFrames={60}><SceneB /></TransitionSeries.Sequence>
+</TransitionSeries>
+// slide() 支持 direction: "from-left" | "from-right" | "from-top" | "from-bottom"
+// 注意：转场会缩短总时长，两个 60 帧场景 + 15 帧转场 = 105 帧（不是 120）
+```
+
+##### 2. Google 字体（@remotion/google-fonts）
+**用户说**："换个好看的字体"、"用XX字体"
+```typescript
+import { loadFont } from "@remotion/google-fonts/Lobster";
+const { fontFamily } = loadFont();
+// 中文字体示例（loadFont() 不传参数即加载全部字重和子集）：
+import { loadFont } from "@remotion/google-fonts/NotoSansSC";
+const { fontFamily } = loadFont();
+```
+
+##### 3. 本地字体（@remotion/fonts）
+**用户说**："用我自己的字体"
+```typescript
+import { loadFont } from "@remotion/fonts";
+import { staticFile } from "remotion";
+await loadFont({ family: "MyFont", url: staticFile("MyFont.woff2") });
+```
+
+##### 4. 形状生成（@remotion/shapes）
+**用户说**："画个圆/三角/星星"、"加个图形"
+```typescript
+import { Circle, Rect, Triangle, Star, Ellipse, Pie } from "@remotion/shapes";
+<Circle radius={100} fill="blue" />
+<Triangle length={200} direction="up" fill="red" />
+<Star innerRadius={50} outerRadius={100} points={5} fill="gold" />
+<Pie radius={100} progress={0.75} fill="green" closePath />
+```
+
+##### 5. SVG 路径动画（@remotion/paths）
+**用户说**："画一条线慢慢出现"、"路径动画"、"折线图动画"
+```typescript
+import { evolvePath, getLength, getPointAtLength, getTangentAtLength } from "@remotion/paths";
+const progress = interpolate(frame, [0, 60], [0, 1], { extrapolateRight: "clamp" });
+const { strokeDasharray, strokeDashoffset } = evolvePath(progress, svgPathString);
+// 可用于：折线图动画、手写签名效果、路径跟踪动画
+```
+
+##### 6. 噪声/粒子效果（@remotion/noise）
+**用户说**："加点动态纹理"、"粒子效果"、"有机感的背景"
+```typescript
+import { noise2D, noise3D, noise4D } from "@remotion/noise";
+// 生成平滑随机值，用于粒子运动、波浪效果、有机动画
+const value = noise2D("seed", x * 0.01, frame * 0.02); // 返回 -1 到 1
+```
+
+##### 7. 运动模糊（@remotion/motion-blur）
+**用户说**："加运动模糊"、"快速运动的模糊效果"
+```typescript
+import { CameraMotionBlur } from "@remotion/motion-blur";
+<CameraMotionBlur samples={10} shutterAngle={180}>
+  <YourAnimatedContent />
+</CameraMotionBlur>
+```
+
+##### 8. 文字测量（@remotion/layout-utils）
+**用户说**："文字自动适配大小"、"不要超出边框"
+```typescript
+import { measureText, fillTextBox, fitText } from "@remotion/layout-utils";
+const { width } = measureText({ text: "Hello", fontFamily: "Arial", fontSize: 48 });
+const fitted = fitText({ text: "长文本", withinWidth: 800, fontFamily: "Arial" });
+// fitted.fontSize 是自动计算的最佳字号
+```
+
+##### 9. GIF 动画（@remotion/gif）
+**用户说**："放个GIF"、"嵌入动图"
+```typescript
+import { Gif } from "@remotion/gif";
+<Gif src={staticFile("animation.gif")} width={300} height={300} fit="cover" />
+// GIF 自动与视频时间轴同步
+```
+
+##### 10. 音视频工具（@remotion/media-utils）
+**用户说**："获取音频时长"、"根据音乐节奏做动画"
+```typescript
+import { getAudioDurationInSeconds, getVideoMetadata, getAudioData, useAudioData, visualizeAudio } from "@remotion/media-utils";
+// 获取音频时长（用于动态计算视频长度）
+const duration = await getAudioDurationInSeconds(staticFile("audio.mp3"));
+// 音频可视化（频谱柱状图）
+const audioData = useAudioData(staticFile("audio.mp3"));
+const visualization = visualizeAudio({ fps, frame, audioData, numberOfSamples: 256 });
+```
+
+##### 11. 数据图表（纯代码实现，无需额外包）
+**用户说**："做个数据动画"、"柱状图/饼图/折线图"
+- 柱状图：用 div + spring 动画控制高度
+- 饼图：用 SVG circle + stroke-dashoffset 动画
+- 折线图：用 @remotion/paths 的 evolvePath 动画
+- 所有图表必须用 useCurrentFrame() 驱动，禁用第三方图表库的内置动画
+
+##### 12. 3D 场景（@remotion/three）— 可选
+**用户说**："做个3D效果"、"立体动画"
+```typescript
+import { ThreeCanvas } from "@remotion/three";
+import { useCurrentFrame } from "remotion";
+// 需要 three、@react-three/fiber、@react-three/drei
+<ThreeCanvas><mesh rotation={[0, frame * 0.02, 0]}>...</mesh></ThreeCanvas>
+```
+
+##### 13. Lottie 动画（@remotion/lottie）— 可选
+**用户说**："嵌入一个Lottie动画"、"用AE导出的动画"
+```typescript
+import { Lottie } from "@remotion/lottie";
+import animationData from "./animation.json";
+<Lottie animationData={animationData} />
+// 自动与视频时间轴同步
+```
+
+##### 14. 地图动画（需 mapbox-gl）— 可选
+**用户说**："做个地图动画"、"展示地理位置"
+需要用户提供 Mapbox API Key，使用 mapbox-gl + @turf/turf 实现
+
+##### 15. 参数化视频（zod schema）
+**用户说**："做个模板可以换内容"、"批量生成不同内容的视频"
+```typescript
+import { z } from "zod";
+const schema = z.object({ title: z.string(), color: z.string() });
+// 在 Composition 中使用 schema 属性，渲染时通过 --props 传入不同数据
+```
+
+##### 16. 透明视频渲染
+**用户说**："导出透明背景的视频"
+渲染时使用 `--codec vp8 --image-format png` 输出 WebM 格式透明视频
+
+#### 音视频操作速查
+
+```typescript
+// 音频：导入、裁剪、音量、变速、循环、变调
+import { Audio } from "@remotion/media";
+<Audio src={staticFile("bgm.mp3")} volume={0.5} trimBefore={2 * fps} trimAfter={10 * fps} loop playbackRate={1.5} toneFrequency={1.2} />
+
+// 视频：导入、裁剪、音量、变速、循环
+import { Video, OffthreadVideo } from "@remotion/media";
+<OffthreadVideo src={staticFile("clip.mp4")} volume={0.8} muted={false} style={{ width: 500 }} />
+// OffthreadVideo 比 Video 性能更好，推荐使用
+```
+
 #### 布局技巧
 
 - 用 `AbsoluteFill` 做全屏背景
 - 用 `flexbox` 居中内容
-- 文字用 `fontFamily: "sans-serif"` 或 `"PingFang SC", "Microsoft YaHei", sans-serif`（中文）
+- 文字用 `@remotion/google-fonts` 加载字体，中文推荐 `NotoSansSC`、`NotoSerifSC`
 - 颜色用 CSS 标准写法
-- 所有样式用 React 的 `style={{}}` 内联写法
+- 所有样式用 React 的 `style={{}}` 内联写法，或用 Tailwind CSS（已安装 @remotion/tailwind）
+- 始终给 `<Sequence>` 加 `premountFor` 预加载
 
 #### 编写原则
 
-1. **组件自包含**：所有动画逻辑写在一个 Main.tsx 里（简单视频），或拆成子组件用 Sequence 编排
-2. **帧驱动**：所有动画基于 `useCurrentFrame()` 计算，不用 CSS animation
-3. **中文友好**：文字内容直接写中文，字体用系统自带中文字体
-4. **性能优先**：避免在渲染函数中做复杂计算，能缓存的用 `useMemo`
+1. **组件自包含**：所有动画逻辑写在一个 Main.tsx 里（简单视频），或拆成子组件用 Sequence/Series/TransitionSeries 编排
+2. **帧驱动**：所有动画基于 `useCurrentFrame()` 计算，不用 CSS animation，不用第三方动画库
+3. **中文友好**：文字内容直接写中文，字体用 @remotion/google-fonts 的 NotoSansSC
+4. **性能优先**：避免在渲染函数中做复杂计算，能缓存的用 `useMemo`；嵌入视频用 `OffthreadVideo` 而非 `Video`
+5. **预加载**：始终给 Sequence 加 `premountFor`；异步资源用 `delayRender`/`continueRender`
+6. **确定性**：需要随机效果时用 `random("seed")` 而非 `Math.random()`，保证每帧渲染结果一致
+
+#### 详细 API 参考
+
+当以上速查信息不够用时（如需要转场时长计算、路径变形、音频可视化、3D 场景、Lottie 动画、Tailwind 配置等高级用法），加载详细参考文档：
+
+```
+读取 <skill-directory>/references/extensions.md
+```
 
 ### Step 4: 渲染视频
 
