@@ -213,18 +213,27 @@ import { clockWipe } from "@remotion/transitions/clock-wipe";
 // 注意：转场会缩短总时长，两个 60 帧场景 + 15 帧转场 = 105 帧（不是 120）
 ```
 
-##### 2. Google 字体（@remotion/google-fonts）
-**用户说**："换个好看的字体"、"用XX字体"
+##### 2. 字体使用（重要）
+
+**中文字体——必须用系统字体回退链**，禁止用 @remotion/google-fonts 加载中文字体（Google CDN 在中国网络不可靠，会导致渲染超时）：
+```typescript
+// ✅ 正确：跨平台系统字体回退链（macOS / Windows / Linux 全覆盖）
+const fontFamily = '"PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif';
+
+// ❌ 错误：不要用 @remotion/google-fonts 加载中文字体
+// import { loadFont } from "@remotion/google-fonts/NotoSansSC";
+// 原因：中文字体有 100+ 个子集，每次渲染需要从 Google CDN 下载，中国网络经常失败
+```
+
+**英文字体**——可以用 @remotion/google-fonts（英文字体子集少，下载快）：
 ```typescript
 import { loadFont } from "@remotion/google-fonts/Lobster";
 const { fontFamily } = loadFont();
-// 中文字体示例（loadFont() 不传参数即加载全部字重和子集）：
-import { loadFont } from "@remotion/google-fonts/NotoSansSC";
-const { fontFamily } = loadFont();
+// 建议指定字重和子集以减少请求：
+const { fontFamily } = loadFont("normal", { weights: ["400", "700"], subsets: ["latin"] });
 ```
 
-##### 3. 本地字体（@remotion/fonts）
-**用户说**："用我自己的字体"
+**自定义字体**——用 @remotion/fonts 加载本地文件：
 ```typescript
 import { loadFont } from "@remotion/fonts";
 import { staticFile } from "remotion";
@@ -349,11 +358,157 @@ import { Video, OffthreadVideo } from "@remotion/media";
 // OffthreadVideo 比 Video 性能更好，推荐使用
 ```
 
+#### 创作质量标准（必须遵守）
+
+每个视频必须达到**商业级信息可视化视频**的水准。以下不是"可选优化"，而是底线要求：
+
+##### 一、叙事结构（有头有尾）
+
+每个视频必须包含三段式结构：
+1. **片头**（1-2 秒）：标题 + 副标题，带入场动画（scale+fade 组合）
+2. **主体**（视频主要内容）：按逻辑分段，每段有主题词/小标题
+3. **片尾**（1-2 秒）：总结语/金句/品牌标识，带退场动画
+
+```typescript
+// 三段式结构模板
+<TransitionSeries>
+  <TransitionSeries.Sequence durationInFrames={60}><Intro /></TransitionSeries.Sequence>
+  <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
+  <TransitionSeries.Sequence durationInFrames={主体帧数}><MainContent /></TransitionSeries.Sequence>
+  <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
+  <TransitionSeries.Sequence durationInFrames={60}><Outro /></TransitionSeries.Sequence>
+</TransitionSeries>
+```
+
+##### 二、视觉设计（专业感）
+
+**背景层次**——禁止使用纯色背景，必须有层次感：
+```typescript
+// 标准背景模板：渐变 + 网格/点阵 + 微光
+const Background = () => {
+  const frame = useCurrentFrame();
+  const { durationInFrames } = useVideoConfig();
+  const hue = interpolate(frame, [0, durationInFrames], [220, 260]);
+  return (
+    <AbsoluteFill>
+      {/* 层1: 渐变底色 */}
+      <div style={{
+        position: "absolute", inset: 0,
+        background: `radial-gradient(ellipse at 30% 20%, hsl(${hue}, 40%, 15%) 0%, hsl(${hue + 20}, 30%, 6%) 100%)`
+      }} />
+      {/* 层2: 网格纹理 */}
+      <div style={{
+        position: "absolute", inset: 0, opacity: 0.06,
+        backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+        backgroundSize: "60px 60px"
+      }} />
+      {/* 层3: 扫光效果（可选） */}
+      <div style={{
+        position: "absolute", inset: 0, opacity: 0.03,
+        background: `radial-gradient(circle at ${30 + frame * 0.3}% ${40 + Math.sin(frame * 0.02) * 10}%, rgba(255,255,255,0.8), transparent 50%)`
+      }} />
+    </AbsoluteFill>
+  );
+};
+```
+
+**节点发光效果**——重要元素必须有辉光（glow）：
+```typescript
+// 发光圆形节点
+<div style={{
+  width: 80, height: 80, borderRadius: "50%",
+  background: `radial-gradient(circle, ${color}, ${darkerColor})`,
+  boxShadow: `0 0 20px ${color}66, 0 0 40px ${color}33, 0 0 60px ${color}1a`,
+  display: "flex", alignItems: "center", justifyContent: "center",
+}} />
+
+// 发光文字
+<h1 style={{
+  fontSize: 64, fontWeight: 900, color: "white",
+  textShadow: "0 0 30px rgba(255,255,255,0.3), 0 2px 10px rgba(0,0,0,0.5)",
+}} />
+```
+
+**配色体系**——使用有意义的分类配色，不随机选颜色：
+```typescript
+// 按语义分配颜色
+const CATEGORY_COLORS = {
+  primary: "#FFD700",    // 金色：核心/标题
+  accent1: "#4ECDC4",    // 青色：第一类
+  accent2: "#FF6B6B",    // 珊瑚：第二类
+  accent3: "#A78BFA",    // 紫色：第三类
+  accent4: "#34D399",    // 绿色：第四类
+  subtle: "rgba(255,255,255,0.6)",  // 次要文字
+  muted: "rgba(255,255,255,0.3)",   // 辅助线条
+};
+```
+
+##### 三、镜头语言（动感）
+
+**禁止全程固定画面**。必须使用至少一种镜头运动：
+
+```typescript
+// 镜头推拉（Zoom）：整个画布缓慢放大
+const zoom = interpolate(frame, [0, durationInFrames], [1, 1.15], {
+  easing: Easing.inOut(Easing.quad),
+});
+<div style={{ transform: `scale(${zoom})`, transformOrigin: "center" }}>
+  {/* 所有内容 */}
+</div>
+
+// 镜头位移（Pan）：跟随焦点移动
+const panX = interpolate(frame, [0, 90, 180, durationInFrames], [0, -100, -200, -300], {
+  extrapolateRight: "clamp",
+  easing: Easing.inOut(Easing.quad),
+});
+<div style={{ transform: `translateX(${panX}px)` }}>
+  {/* 宽幅画布内容 */}
+</div>
+
+// 焦点跟随：新内容出现时画面微调
+const focusX = spring({ frame: frame - 60, fps, config: { damping: 200 } });
+const offsetX = interpolate(focusX, [0, 1], [0, -150]);
+```
+
+##### 四、动画品质（流畅感）
+
+**弹性配置选择**（不要总用同一种 spring）：
+```typescript
+const smooth = { damping: 200 };                    // 丝滑入场（标题、背景元素）
+const snappy = { damping: 20, stiffness: 200 };     // 干脆弹入（按钮、标签）
+const bouncy = { damping: 8 };                       // 弹跳入场（活泼元素）
+const heavy = { damping: 15, stiffness: 80, mass: 2 }; // 沉重落地（大块内容）
+```
+
+**入场+退场成对出现**：
+```typescript
+const inAnimation = spring({ frame, fps, config: { damping: 200 } });
+const outAnimation = spring({ frame, fps, delay: durationInFrames - fps, durationInFrames: fps });
+const progress = inAnimation - outAnimation; // 自动入场+退场
+```
+
+**交错出现（Stagger）**：多个元素不要同时出现，错开 5-10 帧：
+```typescript
+items.map((item, i) => {
+  const delay = i * 8; // 每个元素错开 8 帧
+  const progress = spring({ frame, fps, delay, config: { damping: 200 } });
+  return <div style={{ opacity: progress, transform: `translateY(${(1-progress) * 30}px)` }}>{item}</div>;
+})
+```
+
+##### 五、信息层次（可读性）
+
+- **标题**：fontSize 56-72，fontWeight 900，白色 + textShadow
+- **副标题/分类**：fontSize 24-32，fontWeight 600，主题色
+- **正文/标签**：fontSize 16-20，fontWeight 400，rgba(255,255,255,0.7)
+- **辅助信息**：fontSize 12-14，rgba(255,255,255,0.4)
+- **关系线/连线**：strokeWidth 2-3，带透明度，使用贝塞尔曲线
+
 #### 布局技巧
 
 - 用 `AbsoluteFill` 做全屏背景
 - 用 `flexbox` 居中内容
-- 文字用 `@remotion/google-fonts` 加载字体，中文推荐 `NotoSansSC`、`NotoSerifSC`
+- 中文字体用系统回退链（见上方"字体使用"），英文字体可用 `@remotion/google-fonts`
 - 颜色用 CSS 标准写法
 - 所有样式用 React 的 `style={{}}` 内联写法，或用 Tailwind CSS（已安装 @remotion/tailwind）
 - 始终给 `<Sequence>` 加 `premountFor` 预加载
@@ -362,7 +517,7 @@ import { Video, OffthreadVideo } from "@remotion/media";
 
 1. **组件自包含**：所有动画逻辑写在一个 Main.tsx 里（简单视频），或拆成子组件用 Sequence/Series/TransitionSeries 编排
 2. **帧驱动**：所有动画基于 `useCurrentFrame()` 计算，不用 CSS animation，不用第三方动画库
-3. **中文友好**：文字内容直接写中文，字体用 @remotion/google-fonts 的 NotoSansSC
+3. **中文友好**：文字内容直接写中文，中文字体用系统回退链（`"PingFang SC", "Microsoft YaHei", ...`），不要用 @remotion/google-fonts 加载中文字体
 4. **性能优先**：避免在渲染函数中做复杂计算，能缓存的用 `useMemo`；嵌入视频用 `OffthreadVideo` 而非 `Video`
 5. **预加载**：始终给 Sequence 加 `premountFor`；异步资源用 `delayRender`/`continueRender`
 6. **确定性**：需要随机效果时用 `random("seed")` 而非 `Math.random()`，保证每帧渲染结果一致
@@ -375,7 +530,19 @@ import { Video, OffthreadVideo } from "@remotion/media";
 读取 <skill-directory>/references/extensions.md
 ```
 
-### Step 4: 渲染视频
+### Step 4: 预览视频（推荐）
+
+先启动预览服务器，在浏览器中实时查看效果，方便快速调整：
+
+```bash
+bash <skill-directory>/scripts/preview.sh "$PROJECT_DIR"
+```
+
+预览服务器启动后会输出一个 localhost 地址（如 `http://localhost:3000/Main`），告诉用户可以在浏览器中查看实时预览。预览中可以拖动时间轴、逐帧查看动画效果。
+
+用户确认效果满意后，进入下一步渲染。如果用户不需要预览，可以直接跳到 Step 5 渲染。
+
+### Step 5: 渲染视频
 
 ```bash
 bash <skill-directory>/scripts/render.sh "$PROJECT_DIR" Main "$PROJECT_DIR/output.mp4"
@@ -383,7 +550,7 @@ bash <skill-directory>/scripts/render.sh "$PROJECT_DIR" Main "$PROJECT_DIR/outpu
 
 渲染完成后，脚本会输出 `RENDER_SUCCESS: <文件路径>`。
 
-### Step 5: 交付结果
+### Step 6: 交付结果
 
 告诉用户视频保存在哪里，并询问是否需要调整。
 

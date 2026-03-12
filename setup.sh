@@ -102,7 +102,44 @@ fi
 
 echo ""
 
-# ---- Step 4: 确保浏览器渲染器可用 ----
+# ---- Step 4: 检查中文字体 ----
+echo -e "${BOLD}🔤 检查中文字体...${NC}"
+
+CJK_FONT_FOUND=false
+if [ "$OS" = "macos" ]; then
+  # macOS 自带 PingFang SC
+  if system_profiler SPFontsDataType 2>/dev/null | grep -q "PingFang SC" || [ -f "/System/Library/Fonts/PingFang.ttc" ]; then
+    CJK_FONT_FOUND=true
+    ok "PingFang SC（macOS 内置）"
+  fi
+elif [ "$OS" = "windows" ]; then
+  # Windows 自带 Microsoft YaHei
+  if [ -f "/c/Windows/Fonts/msyh.ttc" ] || [ -f "$WINDIR/Fonts/msyh.ttc" ] 2>/dev/null; then
+    CJK_FONT_FOUND=true
+    ok "Microsoft YaHei（Windows 内置）"
+  fi
+else
+  # Linux：检查常见中文字体
+  if fc-list 2>/dev/null | grep -qi "noto sans cjk\|wenquanyi\|wqy\|droid sans fallback"; then
+    CJK_FONT_FOUND=true
+    ok "中文字体已安装"
+  fi
+fi
+
+if [ "$CJK_FONT_FOUND" = "false" ]; then
+  warn "未检测到中文字体，中文文字可能显示为方块"
+  if [ "$OS" = "linux" ]; then
+    info "建议安装：sudo apt install fonts-noto-cjk（Debian/Ubuntu）"
+    info "         sudo yum install google-noto-sans-cjk-fonts（CentOS/RHEL）"
+  else
+    info "建议安装 Noto Sans CJK 字体"
+  fi
+  FAILED+=("中文字体（可选）")
+fi
+
+echo ""
+
+# ---- Step 5: 确保浏览器渲染器可用 ----
 echo -e "${BOLD}🌐 检查渲染环境...${NC}"
 
 npx remotion browser ensure 2>/dev/null

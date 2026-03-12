@@ -60,21 +60,18 @@ const { fontFamily } = loadFont("normal", {
   subsets: ["latin"],
 });
 
-// 中文字体（不传参数即加载全部字重和子集，最简单可靠）
-import { loadFont } from "@remotion/google-fonts/NotoSansSC";
-const { fontFamily } = loadFont();
-
 // 等待字体加载完成
 const { fontFamily, waitUntilDone } = loadFont();
 await waitUntilDone();
 ```
 
-**常用中文 Google 字体**：
-- `NotoSansSC` — 思源黑体（简体中文）
-- `NotoSerifSC` — 思源宋体（简体中文）
-- `ZCOOL_XiaoWei` — 站酷小薇体
-- `ZCOOL_KuaiLe` — 站酷快乐体
-- `MaShanZheng` — 马善政毛笔楷书
+**⚠️ 中文字体不要用 @remotion/google-fonts**——中文字体有 100+ 个 Unicode 子集，每次渲染需要从 Google CDN（fonts.gstatic.com）下载，在中国网络经常超时失败。
+
+**中文字体推荐方案**——使用系统字体回退链（零网络依赖，跨平台）：
+```typescript
+// 覆盖 macOS (PingFang SC) + Windows (Microsoft YaHei) + Linux (Noto Sans CJK)
+const fontFamily = '"PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif';
+```
 
 ## 本地字体详解（@remotion/fonts）
 
